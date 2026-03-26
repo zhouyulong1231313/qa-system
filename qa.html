@@ -558,13 +558,21 @@
 
             // 延迟回答
             setTimeout(function() {
-                var answer = findAnswer(question);
+                var result = findAnswer(question);
                 removeTyping();
-                addMessage(answer.text, 'bot', answer.category);
 
-                if (answer.id) {
-                    updateViewCount(answer.id);
+                if (result.type === 'no_match') {
+                    // 没有匹配结果
+                    addMessage(result.text, 'bot', result.category);
+                } else if (result.count === 1) {
+                    // 只有一个匹配结果，直接显示答案
+                    var qa = result.matches[0].qa;
+                    addMessage(qa.answer, 'bot', qa.category);
+                    updateViewCount(qa.id);
                     updateStats();
+                } else {
+                    // 多个匹配结果，显示问题选项
+                    addQuestionOptions(result.matches);
                 }
 
                 input.disabled = false;
@@ -576,8 +584,7 @@
         // 查找答案
         function findAnswer(question) {
             var questionLower = question.toLowerCase();
-            var bestMatch = null;
-            var bestScore = 0;
+            var matches = [];
 
             for (var i = 0; i < enabledQuestions.length; i++) {
                 var qa = enabledQuestions[i];
@@ -601,25 +608,85 @@
                     }
                 }
 
-                if (score > bestScore) {
-                    bestScore = score;
-                    bestMatch = qa;
+                if (score > 15) {
+                    matches.push({
+                        qa: qa,
+                        score: score
+                    });
                 }
             }
 
-            if (bestScore > 15 && bestMatch) {
+            // 按得分排序
+            matches.sort(function(a, b) {
+                return b.score - a.score;
+            });
+
+            if (matches.length > 0) {
                 return {
-                    text: bestMatch.answer,
-                    category: bestMatch.category,
-                    id: bestMatch.id
+                    type: 'matches',
+                    matches: matches,
+                    count: matches.length
                 };
             }
 
             return {
+                type: 'no_match',
                 text: "😔 抱歉，我还没有学习到这个问题的答案。\n\n💡 您可以：\n- 换个方式提问\n- 点击快捷问题查看我能回答什么\n- 联系管理员添加相关内容",
                 category: null,
                 id: null
             };
+        }
+
+        // 显示问题选项列表
+        function addQuestionOptions(matches) {
+            var container = document.getElementById('chatContainer');
+            var messageDiv = document.createElement('div');
+            messageDiv.className = 'message bot';
+
+            var contentDiv = document.createElement('div');
+            contentDiv.className = 'message-content';
+
+            var text = '找到 ' + matches.length + ' 个相关问题，请选择：\n\n';
+            var textNode = document.createTextNode(text);
+            contentDiv.appendChild(textNode);
+
+            // 创建问题选项列表
+            for (var i = 0; i < matches.length; i++) {
+                var optionDiv = document.createElement('div');
+                optionDiv.className = 'quick-question';
+                optionDiv.style.marginTop = '8px';
+                optionDiv.style.cursor = 'pointer';
+                optionDiv.textContent = (i + 1) + '. ' + matches[i].qa.question;
+                optionDiv.setAttribute('data-qa-id', matches[i].qa.id);
+
+                optionDiv.onclick = function() {
+                    var qaId = parseInt(this.getAttribute('data-qa-id'));
+                    showQuestionAnswer(qaId);
+                };
+
+                contentDiv.appendChild(optionDiv);
+            }
+
+            messageDiv.appendChild(contentDiv);
+            container.appendChild(messageDiv);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        // 显示选中问题的答案
+        function showQuestionAnswer(qaId) {
+            var qa = null;
+            for (var i = 0; i < allQuestions.length; i++) {
+                if (allQuestions[i].id === qaId) {
+                    qa = allQuestions[i];
+                    break;
+                }
+            }
+
+            if (qa) {
+                addMessage(qa.answer, 'bot', qa.category);
+                updateViewCount(qa.id);
+                updateStats();
+            }
         }
 
         // 添加消息
